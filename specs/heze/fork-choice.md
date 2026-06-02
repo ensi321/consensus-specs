@@ -258,6 +258,23 @@ def on_inclusion_list(store: Store, signed_inclusion_list: SignedInclusionList) 
     """
     inclusion_list = signed_inclusion_list.message
 
+    # Use the head state to verify the inclusion list against the canonical view
+    head = get_head(store)
+    state = store.block_states[head.root]
+
+    # The inclusion list must not be for a future slot
+    assert inclusion_list.slot <= get_current_slot(store)
+
+    # The validator must be a member of the inclusion list committee for the slot
+    committee = get_inclusion_list_committee(state, inclusion_list.slot)
+    assert inclusion_list.validator_index in committee
+
+    # The committee root must match the canonical committee
+    assert inclusion_list.inclusion_list_committee_root == hash_tree_root(committee)
+
+    # The signature must be valid
+    assert is_valid_inclusion_list_signature(state, signed_inclusion_list)
+
     seconds_since_genesis = store.time - store.genesis_time
     time_into_slot_ms = seconds_to_milliseconds(seconds_since_genesis) % SLOT_DURATION_MS
     inclusion_list_due_ms = get_inclusion_list_due_ms()
