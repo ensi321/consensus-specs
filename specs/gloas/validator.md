@@ -24,6 +24,7 @@
   - [Payload timeliness attestation](#payload-timeliness-attestation)
     - [Constructing the `PayloadAttestationMessage`](#constructing-the-payloadattestationmessage)
 - [Modified functions](#modified-functions)
+  - [Modified `get_execution_requests`](#modified-get_execution_requests)
   - [Modified `get_data_column_sidecars_from_column_sidecar`](#modified-get_data_column_sidecars_from_column_sidecar)
 
 <!-- mdformat-toc end -->
@@ -368,6 +369,82 @@ def get_payload_attestation_message_signature(
 `SignedExecutionPayloadEnvelope`.
 
 ## Modified functions
+
+### Modified `get_execution_requests`
+
+*Note*: Modified in Gloas:EIP8282 to recognize the two new request types added
+by EIP-8282 (`BUILDER_DEPOSIT_REQUEST_TYPE`, `BUILDER_EXIT_REQUEST_TYPE`).
+Without this override, the Electra parser rejects any payload from a Gloas
+execution engine that drains either new predeploy queue.
+
+```python
+def get_execution_requests(execution_requests_list: Sequence[bytes]) -> ExecutionRequests:
+    deposits = []
+    withdrawals = []
+    consolidations = []
+    # [New in Gloas:EIP8282]
+    builder_deposits = []
+    # [New in Gloas:EIP8282]
+    builder_exits = []
+
+    request_types = [
+        DEPOSIT_REQUEST_TYPE,
+        WITHDRAWAL_REQUEST_TYPE,
+        CONSOLIDATION_REQUEST_TYPE,
+        # [New in Gloas:EIP8282]
+        BUILDER_DEPOSIT_REQUEST_TYPE,
+        # [New in Gloas:EIP8282]
+        BUILDER_EXIT_REQUEST_TYPE,
+    ]
+
+    prev_request_type = None
+    for request in execution_requests_list:
+        request_type, request_data = request[0:1], request[1:]
+
+        # Check that the request type is valid
+        assert request_type in request_types
+        # Check that the request data is not empty
+        assert len(request_data) != 0
+        # Check that requests are in strictly ascending order
+        # Each successive type must be greater than the last with no duplicates
+        assert prev_request_type is None or prev_request_type < request_type
+        prev_request_type = request_type
+
+        if request_type == DEPOSIT_REQUEST_TYPE:
+            deposits = ssz_deserialize(
+                List[DepositRequest, MAX_DEPOSIT_REQUESTS_PER_PAYLOAD], request_data
+            )
+        elif request_type == WITHDRAWAL_REQUEST_TYPE:
+            withdrawals = ssz_deserialize(
+                List[WithdrawalRequest, MAX_WITHDRAWAL_REQUESTS_PER_PAYLOAD], request_data
+            )
+        elif request_type == CONSOLIDATION_REQUEST_TYPE:
+            consolidations = ssz_deserialize(
+                List[ConsolidationRequest, MAX_CONSOLIDATION_REQUESTS_PER_PAYLOAD], request_data
+            )
+        # [New in Gloas:EIP8282]
+        elif request_type == BUILDER_DEPOSIT_REQUEST_TYPE:
+            builder_deposits = ssz_deserialize(
+                List[BuilderDepositRequest, MAX_BUILDER_DEPOSIT_REQUESTS_PER_PAYLOAD],
+                request_data,
+            )
+        # [New in Gloas:EIP8282]
+        elif request_type == BUILDER_EXIT_REQUEST_TYPE:
+            builder_exits = ssz_deserialize(
+                List[BuilderExitRequest, MAX_BUILDER_EXIT_REQUESTS_PER_PAYLOAD],
+                request_data,
+            )
+
+    return ExecutionRequests(
+        deposits=deposits,
+        withdrawals=withdrawals,
+        consolidations=consolidations,
+        # [New in Gloas:EIP8282]
+        builder_deposits=builder_deposits,
+        # [New in Gloas:EIP8282]
+        builder_exits=builder_exits,
+    )
+```
 
 ### Modified `get_data_column_sidecars_from_column_sidecar`
 

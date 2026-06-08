@@ -61,6 +61,13 @@ def initialize_ptc_window(
 pending deposit signatures and cache the results. The pending deposit queue
 might be large and verifying many signatures at the fork could be slow.
 
+*Note*: EIP-8282 routes builder onboarding through the request bus post-fork,
+but the pre-gloas protocol has no handler for the builder request types, so
+the request bus cannot onboard builders before the fork. To allow builders to
+be active at the fork, this one-time migration onboards builders from pre-fork
+pending deposits carrying the `BUILDER_WITHDRAWAL_PREFIX` credential. This is
+the only place where the credential prefix routes a builder deposit.
+
 ```python
 def onboard_builders_from_pending_deposits(state: BeaconState) -> None:
     """

@@ -6,7 +6,6 @@
 
 - [Introduction](#introduction)
 - [Becoming a builder](#becoming-a-builder)
-  - [Builder withdrawal credentials](#builder-withdrawal-credentials)
   - [Submit deposit](#submit-deposit)
   - [Process deposit](#process-deposit)
   - [Builder index](#builder-index)
@@ -35,37 +34,39 @@ builders.
 
 ## Becoming a builder
 
-### Builder withdrawal credentials
-
-When submitting a deposit to the deposit contract, the `withdrawal_credentials`
-field determines whether the staked actor will be a validator or a builder. To
-be recognized as a builder, the `withdrawal_credentials` must use the
-`BUILDER_WITHDRAWAL_PREFIX`.
-
-The `withdrawal_credentials` field must be:
-
-- `withdrawal_credentials[:1] == BUILDER_WITHDRAWAL_PREFIX` (`0x03`)
-- `withdrawal_credentials[1:12] == b'\x00' * 11`
-- `withdrawal_credentials[12:] == builder_execution_address`
-
-Where `builder_execution_address` is an execution-layer address that will
-receive withdrawals.
-
 ### Submit deposit
 
-Builders follow the same deposit process as validators, but with the
-builder-specific withdrawal credentials. The deposit must include:
+Post-fork, EIP-8282 routes builder onboarding through a dedicated EIP-7685
+request bus, not through the validator deposit contract. Builders submit a
+deposit by calling `deposit(pubkey, withdrawal_credentials, amount, signature)`
+on the `BUILDER_DEPOSIT_CONTRACT_ADDRESS` predeploy. The execution layer
+encodes the call as a `BUILDER_DEPOSIT_REQUEST_TYPE` (`0x03`) record on the
+request bus, and the consensus layer processes it via
+`process_builder_deposit_request`.
 
-- `pubkey`: The builder's BLS public key.
-- `withdrawal_credentials`: With the `BUILDER_WITHDRAWAL_PREFIX` (`0x03`)
-  prefix.
-- `amount`: At least `MIN_DEPOSIT_AMOUNT` gwei.
-- `signature`: BLS signature over the deposit data.
+To be active at the Gloas fork itself, a builder must deposit through the
+existing validator deposit contract before the fork using
+`BUILDER_WITHDRAWAL_PREFIX` (`0x03`) withdrawal credentials; the pre-gloas
+protocol has no handler for the builder request bus. See
+[Activation](#activation) and `onboard_builders_from_pending_deposits`.
+
+The deposit fields are:
+
+- `pubkey`: the builder's BLS public key.
+- `withdrawal_credentials`: a 32-byte field whose last 20 bytes hold the
+  builder's `execution_address`. This address is the cold key used to
+  authorize builder exits and to receive sweep withdrawals.
+- `amount`: at least `MIN_DEPOSIT_AMOUNT` gwei.
+- `signature`: BLS proof-of-possession over the deposit message; verified by
+  the consensus layer.
 
 ### Process deposit
 
-The beacon chain processes builder deposits identically to validator deposits,
-with the withdrawal credentials using `BUILDER_WITHDRAWAL_PREFIX`.
+The consensus layer applies builder deposits immediately on receipt of the
+request via `apply_deposit_for_builder`. There is no pending-deposit queue
+for builders. A single BLS public key may simultaneously appear in both the
+validator and builder registries; the request type, not the pubkey, decides
+routing.
 
 ### Builder index
 
@@ -80,11 +81,14 @@ index) has been finalized. Since registrations occur as soon as deposits reach
 the beacon chain, builders typically become active two epochs after submitting
 their deposit.
 
-*Note*: At the fork, pending deposits with the `BUILDER_WITHDRAWAL_PREFIX` are
-applied to the builder registry. The builder's `deposit_epoch` is set to the
-epoch of the pending deposit, not the fork epoch. Therefore, if that epoch is
-finalized at the fork, the builder will be immediately active. See
-`onboard_builders_from_pending_deposits` for details.
+*Note*: Post-fork, builder onboarding occurs through the
+`BUILDER_DEPOSIT_CONTRACT_ADDRESS` predeploy. To allow builders to be active at
+the Gloas fork itself, a one-time migration
+(`onboard_builders_from_pending_deposits`) onboards builders from pre-fork
+pending deposits carrying the `BUILDER_WITHDRAWAL_PREFIX` credential. The
+builder's `deposit_epoch` is set to the epoch of the pending deposit, not the
+fork epoch, so a builder whose deposit epoch is already finalized at the fork
+is immediately active.
 
 ## Builder activities
 
