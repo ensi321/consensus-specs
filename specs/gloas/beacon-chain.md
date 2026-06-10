@@ -26,6 +26,7 @@
     - [`Builder`](#builder)
     - [`BuilderPendingPayment`](#builderpendingpayment)
     - [`BuilderPendingWithdrawal`](#builderpendingwithdrawal)
+    - [`BuilderWithdrawal`](#builderwithdrawal)
     - [`BuilderDepositRequest`](#builderdepositrequest)
     - [`BuilderExitRequest`](#builderexitrequest)
     - [`PayloadAttestationData`](#payloadattestationdata)
@@ -46,7 +47,6 @@
     - [`ExpectedWithdrawals`](#expectedwithdrawals)
 - [Helpers](#helpers)
   - [Predicates](#predicates)
-    - [New `is_builder_index`](#new-is_builder_index)
     - [New `is_active_builder`](#new-is_active_builder)
     - [New `is_builder_withdrawal_credential`](#new-is_builder_withdrawal_credential)
     - [New `is_attestation_same_slot`](#new-is_attestation_same_slot)
@@ -54,7 +54,6 @@
     - [New `is_pending_validator`](#new-is_pending_validator)
   - [Misc](#misc-2)
     - [New `convert_builder_index_to_validator_index`](#new-convert_builder_index_to_validator_index)
-    - [New `convert_validator_index_to_builder_index`](#new-convert_validator_index_to_builder_index)
     - [New `get_pending_balance_to_withdraw_for_builder`](#new-get_pending_balance_to_withdraw_for_builder)
     - [New `can_builder_cover_bid`](#new-can_builder_cover_bid)
     - [New `compute_balance_weighted_selection`](#new-compute_balance_weighted_selection)
@@ -88,11 +87,13 @@
     - [Withdrawals](#withdrawals)
       - [New `get_builder_withdrawals`](#new-get_builder_withdrawals)
       - [New `get_builders_sweep_withdrawals`](#new-get_builders_sweep_withdrawals)
+      - [New `flatten_withdrawals`](#new-flatten_withdrawals)
       - [Modified `get_expected_withdrawals`](#modified-get_expected_withdrawals)
       - [Modified `apply_withdrawals`](#modified-apply_withdrawals)
       - [New `update_payload_expected_withdrawals`](#new-update_payload_expected_withdrawals)
       - [New `update_builder_pending_withdrawals`](#new-update_builder_pending_withdrawals)
       - [New `update_next_withdrawal_builder_index`](#new-update_next_withdrawal_builder_index)
+      - [Modified `update_next_withdrawal_validator_index`](#modified-update_next_withdrawal_validator_index)
       - [Modified `process_withdrawals`](#modified-process_withdrawals)
     - [Execution payload](#execution-payload)
       - [Removed `process_execution_payload`](#removed-process_execution_payload)
@@ -267,6 +268,23 @@ class BuilderPendingWithdrawal(Container):
     fee_recipient: ExecutionAddress
     amount: Gwei
     builder_index: BuilderIndex
+```
+
+#### `BuilderWithdrawal`
+
+*Note*: The container is new in Gloas:EIP8282 as a CL-internal type. It is
+emitted by `get_builder_withdrawals` and `get_builders_sweep_withdrawals`
+during state-transition bookkeeping, then converted to `Withdrawal` records
+(via `flatten_withdrawals`) before being committed to
+`state.payload_expected_withdrawals`. The `ExecutionPayload` SSZ schema is
+unchanged; the execution layer continues to see a single `withdrawals` list.
+
+```python
+class BuilderWithdrawal(Container):
+    index: WithdrawalIndex
+    builder_index: BuilderIndex
+    address: ExecutionAddress
+    amount: Gwei
 ```
 
 #### `BuilderDepositRequest`
@@ -534,6 +552,14 @@ class ExecutionRequests(Container):
 @dataclass
 class ExpectedWithdrawals:
     withdrawals: Sequence[Withdrawal]
+    # [New in Gloas:EIP8282]
+    builder_withdrawals: Sequence[BuilderWithdrawal]
+    # [New in Gloas:EIP8282]
+    # Subset of ``withdrawals`` produced by the validator sweep, kept
+    # separately so ``update_next_withdrawal_validator_index`` can resume from
+    # the correct validator index when the shared payload-capacity cap stopped
+    # the sweep early.
+    validator_sweep_withdrawals: Sequence[Withdrawal]
     # [New in Gloas:EIP7732]
     processed_builder_withdrawals_count: uint64
     processed_partial_withdrawals_count: uint64
@@ -545,13 +571,6 @@ class ExpectedWithdrawals:
 ## Helpers
 
 ### Predicates
-
-#### New `is_builder_index`
-
-```python
-def is_builder_index(validator_index: ValidatorIndex) -> bool:
-    return (validator_index & BUILDER_INDEX_FLAG) != 0
-```
 
 #### New `is_active_builder`
 
@@ -649,13 +668,6 @@ def is_pending_validator(pending_deposits: Sequence[PendingDeposit], pubkey: BLS
 ```python
 def convert_builder_index_to_validator_index(builder_index: BuilderIndex) -> ValidatorIndex:
     return ValidatorIndex(builder_index | BUILDER_INDEX_FLAG)
-```
-
-#### New `convert_validator_index_to_builder_index`
-
-```python
-def convert_validator_index_to_builder_index(validator_index: ValidatorIndex) -> BuilderIndex:
-    return BuilderIndex(validator_index & ~BUILDER_INDEX_FLAG)
 ```
 
 #### New `get_pending_balance_to_withdraw_for_builder`
@@ -1292,23 +1304,23 @@ def get_builder_withdrawals(
     state: BeaconState,
     withdrawal_index: WithdrawalIndex,
     prior_withdrawals: Sequence[Withdrawal],
-) -> Tuple[Sequence[Withdrawal], WithdrawalIndex, uint64]:
+) -> Tuple[Sequence[BuilderWithdrawal], WithdrawalIndex, uint64]:
     withdrawals_limit = MAX_WITHDRAWALS_PER_PAYLOAD - 1
     assert len(prior_withdrawals) <= withdrawals_limit
 
     processed_count: uint64 = 0
-    withdrawals: List[Withdrawal] = []
+    withdrawals: List[BuilderWithdrawal] = []
     for withdrawal in state.builder_pending_withdrawals:
-        all_withdrawals = prior_withdrawals + withdrawals
-        has_reached_limit = len(all_withdrawals) >= withdrawals_limit
+        # [Modified in Gloas:EIP8282]
+        has_reached_limit = len(prior_withdrawals) + len(withdrawals) >= withdrawals_limit
         if has_reached_limit:
             break
 
-        builder_index = withdrawal.builder_index
+        # [Modified in Gloas:EIP8282]
         withdrawals.append(
-            Withdrawal(
+            BuilderWithdrawal(
                 index=withdrawal_index,
-                validator_index=convert_builder_index_to_validator_index(builder_index),
+                builder_index=withdrawal.builder_index,
                 address=withdrawal.fee_recipient,
                 amount=withdrawal.amount,
             )
@@ -1326,27 +1338,28 @@ def get_builders_sweep_withdrawals(
     state: BeaconState,
     withdrawal_index: WithdrawalIndex,
     prior_withdrawals: Sequence[Withdrawal],
-) -> Tuple[Sequence[Withdrawal], WithdrawalIndex, uint64]:
+) -> Tuple[Sequence[BuilderWithdrawal], WithdrawalIndex, uint64]:
     epoch = get_current_epoch(state)
     builders_limit = min(len(state.builders), MAX_BUILDERS_PER_WITHDRAWALS_SWEEP)
     withdrawals_limit = MAX_WITHDRAWALS_PER_PAYLOAD - 1
     assert len(prior_withdrawals) <= withdrawals_limit
 
     processed_count: uint64 = 0
-    withdrawals: List[Withdrawal] = []
+    withdrawals: List[BuilderWithdrawal] = []
     builder_index = state.next_withdrawal_builder_index
     for _ in range(builders_limit):
-        all_withdrawals = prior_withdrawals + withdrawals
-        has_reached_limit = len(all_withdrawals) >= withdrawals_limit
+        # [Modified in Gloas:EIP8282]
+        has_reached_limit = len(prior_withdrawals) + len(withdrawals) >= withdrawals_limit
         if has_reached_limit:
             break
 
         builder = state.builders[builder_index]
         if builder.withdrawable_epoch <= epoch and builder.balance > 0:
+            # [Modified in Gloas:EIP8282]
             withdrawals.append(
-                Withdrawal(
+                BuilderWithdrawal(
                     index=withdrawal_index,
-                    validator_index=convert_builder_index_to_validator_index(builder_index),
+                    builder_index=builder_index,
                     address=builder.execution_address,
                     amount=builder.balance,
                 )
@@ -1359,45 +1372,90 @@ def get_builders_sweep_withdrawals(
     return withdrawals, withdrawal_index, processed_count
 ```
 
+##### New `flatten_withdrawals`
+
+*Note*: Added in Gloas:EIP8282. Folds CL-internal `BuilderWithdrawal` records
+into `Withdrawal` records using `BUILDER_INDEX_FLAG | builder_index` for the
+`validator_index` field. The execution layer never interprets
+`Withdrawal.validator_index` semantically (only `address` and `amount` are
+consumed; see EIP-4895), so the flag bit serves only to preserve builder
+identity for off-chain consumers that read the merged list. The output list
+is ordered by the shared `WithdrawalIndex` counter so the resulting sequence
+matches the order in which entries were emitted by `get_expected_withdrawals`.
+
+```python
+def flatten_withdrawals(
+    withdrawals: Sequence[Withdrawal],
+    builder_withdrawals: Sequence[BuilderWithdrawal],
+) -> Sequence[Withdrawal]:
+    converted = [
+        Withdrawal(
+            index=bw.index,
+            validator_index=convert_builder_index_to_validator_index(bw.builder_index),
+            address=bw.address,
+            amount=bw.amount,
+        )
+        for bw in builder_withdrawals
+    ]
+    return sorted(list(withdrawals) + converted, key=lambda w: w.index)
+```
+
 ##### Modified `get_expected_withdrawals`
+
+*Note*: Modified in Gloas:EIP8282 to track builder-side and validator-side
+withdrawals as two typed lists. Both share the same `WithdrawalIndex` counter
+so the merged ordering is preserved by `flatten_withdrawals` when the
+result is committed to `state.payload_expected_withdrawals`.
 
 ```python
 def get_expected_withdrawals(state: BeaconState) -> ExpectedWithdrawals:
     withdrawal_index = state.next_withdrawal_index
     withdrawals: List[Withdrawal] = []
+    # [New in Gloas:EIP8282]
+    builder_withdrawals: List[BuilderWithdrawal] = []
 
-    # [New in Gloas:EIP7732]
-    # Get builder withdrawals
-    builder_withdrawals, withdrawal_index, processed_builder_withdrawals_count = (
-        get_builder_withdrawals(state, withdrawal_index, withdrawals)
+    # [Modified in Gloas:EIP8282]
+    # Each planner receives the merged validator + builder list so the shared
+    # MAX_WITHDRAWALS_PER_PAYLOAD cap is enforced across all four sources.
+    # Builder entries carry BUILDER_INDEX_FLAG in validator_index, so they
+    # never collide with real validator-index lookups in
+    # get_balance_after_withdrawals.
+    pending_builder_withdrawals, withdrawal_index, processed_builder_withdrawals_count = (
+        get_builder_withdrawals(
+            state, withdrawal_index, flatten_withdrawals(withdrawals, builder_withdrawals)
+        )
     )
-    withdrawals.extend(builder_withdrawals)
+    builder_withdrawals.extend(pending_builder_withdrawals)
 
-    # Get partial withdrawals
     partial_withdrawals, withdrawal_index, processed_partial_withdrawals_count = (
-        get_pending_partial_withdrawals(state, withdrawal_index, withdrawals)
+        get_pending_partial_withdrawals(
+            state, withdrawal_index, flatten_withdrawals(withdrawals, builder_withdrawals)
+        )
     )
     withdrawals.extend(partial_withdrawals)
 
-    # [New in Gloas:EIP7732]
-    # Get builders sweep withdrawals
     builders_sweep_withdrawals, withdrawal_index, processed_builders_sweep_count = (
-        get_builders_sweep_withdrawals(state, withdrawal_index, withdrawals)
+        get_builders_sweep_withdrawals(
+            state, withdrawal_index, flatten_withdrawals(withdrawals, builder_withdrawals)
+        )
     )
-    withdrawals.extend(builders_sweep_withdrawals)
+    builder_withdrawals.extend(builders_sweep_withdrawals)
 
-    # Get validators sweep withdrawals
     validators_sweep_withdrawals, withdrawal_index, processed_validators_sweep_count = (
-        get_validators_sweep_withdrawals(state, withdrawal_index, withdrawals)
+        get_validators_sweep_withdrawals(
+            state, withdrawal_index, flatten_withdrawals(withdrawals, builder_withdrawals)
+        )
     )
     withdrawals.extend(validators_sweep_withdrawals)
 
     return ExpectedWithdrawals(
         withdrawals,
-        # [New in Gloas:EIP7732]
+        # [New in Gloas:EIP8282]
+        builder_withdrawals,
+        # [New in Gloas:EIP8282]
+        validators_sweep_withdrawals,
         processed_builder_withdrawals_count,
         processed_partial_withdrawals_count,
-        # [New in Gloas:EIP7732]
         processed_builders_sweep_count,
         processed_validators_sweep_count,
     )
@@ -1405,25 +1463,37 @@ def get_expected_withdrawals(state: BeaconState) -> ExpectedWithdrawals:
 
 ##### Modified `apply_withdrawals`
 
+*Note*: Modified in Gloas:EIP8282 to take a dedicated `builder_withdrawals`
+sequence. The `is_builder_index` runtime branch is removed; balance
+deductions dispatch by container type.
+
 ```python
-def apply_withdrawals(state: BeaconState, withdrawals: Sequence[Withdrawal]) -> None:
+def apply_withdrawals(
+    state: BeaconState,
+    withdrawals: Sequence[Withdrawal],
+    # [New in Gloas:EIP8282]
+    builder_withdrawals: Sequence[BuilderWithdrawal],
+) -> None:
     for withdrawal in withdrawals:
-        # [Modified in Gloas:EIP7732]
-        if is_builder_index(withdrawal.validator_index):
-            builder_index = convert_validator_index_to_builder_index(withdrawal.validator_index)
-            builder_balance = state.builders[builder_index].balance
-            state.builders[builder_index].balance -= min(withdrawal.amount, builder_balance)
-        else:
-            decrease_balance(state, withdrawal.validator_index, withdrawal.amount)
+        decrease_balance(state, withdrawal.validator_index, withdrawal.amount)
+    # [New in Gloas:EIP8282]
+    for builder_withdrawal in builder_withdrawals:
+        builder = state.builders[builder_withdrawal.builder_index]
+        builder.balance -= min(builder_withdrawal.amount, builder.balance)
 ```
 
 ##### New `update_payload_expected_withdrawals`
 
 ```python
 def update_payload_expected_withdrawals(
-    state: BeaconState, withdrawals: Sequence[Withdrawal]
+    state: BeaconState,
+    withdrawals: Sequence[Withdrawal],
+    # [New in Gloas:EIP8282]
+    builder_withdrawals: Sequence[BuilderWithdrawal],
 ) -> None:
-    state.payload_expected_withdrawals = List[Withdrawal, MAX_WITHDRAWALS_PER_PAYLOAD](withdrawals)
+    state.payload_expected_withdrawals = List[Withdrawal, MAX_WITHDRAWALS_PER_PAYLOAD](
+        flatten_withdrawals(withdrawals, builder_withdrawals)
+    )
 ```
 
 ##### New `update_builder_pending_withdrawals`
@@ -1448,6 +1518,43 @@ def update_next_withdrawal_builder_index(
         next_index = state.next_withdrawal_builder_index + processed_builders_sweep_count
         next_builder_index = BuilderIndex(next_index % len(state.builders))
         state.next_withdrawal_builder_index = next_builder_index
+```
+
+##### Modified `update_next_withdrawal_validator_index`
+
+*Note*: Overridden in Gloas:EIP8282. The Capella implementation infers
+"validator sweep stopped early" from
+`len(withdrawals) == MAX_WITHDRAWALS_PER_PAYLOAD`. In Gloas the validator
+sweep shares the per-payload cap with builder withdrawals, so the
+validator-side withdrawals list alone may be below `MAX_WITHDRAWALS_PER_PAYLOAD`
+even when the sweep stopped early. This override uses
+`processed_validators_sweep_count` to detect the early-stop case directly and
+the validator sweep's own withdrawal list (not the merged list) to find the
+resume point.
+
+```python
+def update_next_withdrawal_validator_index(
+    state: BeaconState,
+    validator_sweep_withdrawals: Sequence[Withdrawal],
+    processed_validators_sweep_count: uint64,
+) -> None:
+    if processed_validators_sweep_count < MAX_VALIDATORS_PER_WITHDRAWALS_SWEEP:
+        # Stopped early due to the shared payload-capacity cap.
+        # Resume from the last actually-included validator + 1.
+        if len(validator_sweep_withdrawals) > 0:
+            last_validator_index = validator_sweep_withdrawals[-1].validator_index
+            state.next_withdrawal_validator_index = ValidatorIndex(
+                (last_validator_index + 1) % len(state.validators)
+            )
+        # else: capacity was full before sweep began; cursor unchanged.
+    else:
+        # Full sweep window scanned; advance cursor by the window size.
+        next_index = (
+            state.next_withdrawal_validator_index + MAX_VALIDATORS_PER_WITHDRAWALS_SWEEP
+        )
+        state.next_withdrawal_validator_index = ValidatorIndex(
+            next_index % len(state.validators)
+        )
 ```
 
 ##### Modified `process_withdrawals`
@@ -1488,19 +1595,32 @@ def process_withdrawals(
     # Get expected withdrawals
     expected = get_expected_withdrawals(state)
 
-    # Apply expected withdrawals
-    apply_withdrawals(state, expected.withdrawals)
+    # [Modified in Gloas:EIP8282]
+    # Apply expected withdrawals (validator + builder lists are typed)
+    apply_withdrawals(state, expected.withdrawals, expected.builder_withdrawals)
 
     # Update withdrawals fields in the state
-    update_next_withdrawal_index(state, expected.withdrawals)
-    # [New in Gloas:EIP7732]
-    update_payload_expected_withdrawals(state, expected.withdrawals)
+    # [Modified in Gloas:EIP8282]
+    # Advance next_withdrawal_index across the merged list so the global
+    # WithdrawalIndex counter accounts for both validator and builder entries.
+    update_next_withdrawal_index(
+        state, flatten_withdrawals(expected.withdrawals, expected.builder_withdrawals)
+    )
+    # [Modified in Gloas:EIP8282]
+    update_payload_expected_withdrawals(
+        state, expected.withdrawals, expected.builder_withdrawals
+    )
     # [New in Gloas:EIP7732]
     update_builder_pending_withdrawals(state, expected.processed_builder_withdrawals_count)
     update_pending_partial_withdrawals(state, expected.processed_partial_withdrawals_count)
     # [New in Gloas:EIP7732]
     update_next_withdrawal_builder_index(state, expected.processed_builders_sweep_count)
-    update_next_withdrawal_validator_index(state, expected.withdrawals)
+    # [Modified in Gloas:EIP8282]
+    update_next_withdrawal_validator_index(
+        state,
+        expected.validator_sweep_withdrawals,
+        expected.processed_validators_sweep_count,
+    )
 ```
 
 #### Execution payload

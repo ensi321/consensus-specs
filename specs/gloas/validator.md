@@ -276,7 +276,13 @@ def prepare_execution_payload(
         state = copy(state)
         # Apply parent payload before computing withdrawals
         apply_parent_execution_payload(state, envelope.execution_requests)
-        withdrawals = get_expected_withdrawals(state).withdrawals
+        # [Modified in Gloas:EIP8282]
+        # Merge typed validator/builder lists so the EL builder sees a single
+        # list matching the ExecutionPayload schema.
+        expected = get_expected_withdrawals(state)
+        withdrawals = flatten_withdrawals(
+            expected.withdrawals, expected.builder_withdrawals
+        )
         head_block_hash = parent_bid.block_hash
     else:
         withdrawals = state.payload_expected_withdrawals
