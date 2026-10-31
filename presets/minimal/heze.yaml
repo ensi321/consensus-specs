@@ -5,6 +5,11 @@
 # 2**4 (= 16) validators
 INCLUSION_LIST_COMMITTEE_SIZE: 16
 
+# Execution
+# ---------------------------------------------------------------
+# 2**4 (= 16)
+MAX_SET_SWEEP_THRESHOLD_REQUESTS_PER_PAYLOAD: 16
+
 # Type-specific SSZ bounds
 # ---------------------------------------------------------------
 # 196,934 bytes, ~192 KiB

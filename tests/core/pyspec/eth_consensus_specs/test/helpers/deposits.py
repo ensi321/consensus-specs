@@ -570,8 +570,12 @@ def run_pending_deposit_applying(spec, state, pending_deposit, validator_index, 
             assert len(state.validators) == pre_validator_count + 1
             assert len(state.balances) == pre_validator_count + 1
             # effective balance is set correctly
-            max_effective_balace = spec.get_max_effective_balance(state.validators[validator_index])
-            effective_balance = min(max_effective_balace, pending_deposit.amount)
+            validator = state.validators[validator_index]
+            if is_post_heze(spec):
+                max_effective_balance = spec.get_sweep_threshold(validator)
+            else:
+                max_effective_balance = spec.get_max_effective_balance(validator)
+            effective_balance = min(max_effective_balance, pending_deposit.amount)
             effective_balance -= effective_balance % spec.EFFECTIVE_BALANCE_INCREMENT
             assert state.validators[validator_index].effective_balance == effective_balance
         assert get_balance(state, validator_index) == pre_balance + pending_deposit.amount

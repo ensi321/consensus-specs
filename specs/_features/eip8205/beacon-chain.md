@@ -99,7 +99,7 @@ cross-network replay.
 
 | Name                           | Value            |
 | ------------------------------ | ---------------- |
-| `PREREGISTRATION_REQUEST_TYPE` | `Bytes1("0x05")` |
+| `PREREGISTRATION_REQUEST_TYPE` | `Bytes1("0x06")` |
 
 ## Presets
 
@@ -171,13 +171,14 @@ class BeaconState(ProgressiveContainer):
 
 ```python
 class ExecutionRequests(ProgressiveContainer):
-    ACTIVE_FIELDS = active_fields(width=6)
+    ACTIVE_FIELDS = active_fields(width=7)
 
     deposits: DepositRequests
     withdrawals: WithdrawalRequests
     consolidations: ConsolidationRequests
     builder_deposits: BuilderDepositRequests
     builder_exits: BuilderExitRequests
+    sweep_thresholds: SweepThresholdRequests
     # [New in EIP8205]
     preregistrations: PreregistrationRequests
 ```
@@ -362,6 +363,7 @@ def get_execution_requests_list(execution_requests: ExecutionRequests) -> Sequen
         (CONSOLIDATION_REQUEST_TYPE, execution_requests.consolidations),
         (BUILDER_DEPOSIT_REQUEST_TYPE, execution_requests.builder_deposits),
         (BUILDER_EXIT_REQUEST_TYPE, execution_requests.builder_exits),
+        (SWEEP_THRESHOLD_REQUEST_TYPE, execution_requests.sweep_thresholds),
         # [New in EIP8205]
         (PREREGISTRATION_REQUEST_TYPE, execution_requests.preregistrations),
     ]
@@ -476,6 +478,7 @@ def apply_parent_execution_payload(
     assert len(requests.consolidations) <= MAX_CONSOLIDATION_REQUESTS_PER_PAYLOAD
     assert len(requests.builder_deposits) <= MAX_BUILDER_DEPOSIT_REQUESTS_PER_PAYLOAD
     assert len(requests.builder_exits) <= MAX_BUILDER_EXIT_REQUESTS_PER_PAYLOAD
+    assert len(requests.sweep_thresholds) <= MAX_SET_SWEEP_THRESHOLD_REQUESTS_PER_PAYLOAD
     # [New in EIP8205]
     assert len(requests.preregistrations) <= MAX_PREREGISTRATION_REQUESTS_PER_PAYLOAD
 
@@ -509,6 +512,7 @@ def apply_parent_execution_payload(
     for_ops(requests.consolidations, process_consolidation_request)
     for_ops(requests.builder_deposits, process_builder_deposit_request)
     for_ops(requests.builder_exits, process_builder_exit_request)
+    for_ops(requests.sweep_thresholds, process_set_sweep_threshold_request)
     # [New in EIP8205]
     for_ops(requests.preregistrations, process_preregistration_request)
 

@@ -37,6 +37,11 @@ If `state.slot % SLOTS_PER_EPOCH == 0` and
 `compute_epoch_at_slot(state.slot) == HEZE_FORK_EPOCH`, an irregular state
 change is made to upgrade to Heze.
 
+*Note*: The threshold bytes of every existing compounding validator are cleared,
+so that every validator that exists at the fork starts at the default sweep
+threshold regardless of what its credentials carried before. Only validators
+whose credentials have non-zero threshold bytes are changed.
+
 ```python
 def upgrade_to_heze(pre: gloas.BeaconState) -> BeaconState:
     # [New in Heze:EIP8015]
@@ -119,6 +124,11 @@ def upgrade_to_heze(pre: gloas.BeaconState) -> BeaconState:
         payload_expected_withdrawals=pre.payload_expected_withdrawals,
         ptc_window=pre.ptc_window,
     )
+
+    # [New in Heze:EIP8148]
+    for validator in post.validators:
+        if has_compounding_withdrawal_credential(validator):
+            set_sweep_threshold(validator, MAX_EFFECTIVE_BALANCE_ELECTRA)
 
     return post
 ```

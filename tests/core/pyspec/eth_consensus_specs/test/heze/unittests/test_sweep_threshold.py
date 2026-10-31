@@ -2,11 +2,8 @@ from eth_consensus_specs.test.context import (
     single_phase,
     spec_state_test,
     spec_test,
-    with_eip8148_and_later,
-    with_phases,
-    with_state,
+    with_heze_and_later,
 )
-from eth_consensus_specs.test.helpers.constants import EIP8148, HEZE
 from eth_consensus_specs.test.helpers.withdrawals import (
     set_compounding_withdrawal_credential_with_balance,
     set_eth1_withdrawal_credential_with_balance,
@@ -48,7 +45,7 @@ def _prepare_compounding(spec, state, index=0, balance_eth=32):
     return state.validators[index]
 
 
-@with_eip8148_and_later
+@with_heze_and_later
 @spec_test
 @single_phase
 def test_get_sweep_threshold__default(spec):
@@ -57,7 +54,7 @@ def test_get_sweep_threshold__default(spec):
     )
 
 
-@with_eip8148_and_later
+@with_heze_and_later
 @spec_test
 @single_phase
 def test_get_sweep_threshold__custom(spec):
@@ -65,7 +62,7 @@ def test_get_sweep_threshold__custom(spec):
         assert spec.get_sweep_threshold(_compounding_validator(spec, amount)) == _eth(spec, amount)
 
 
-@with_eip8148_and_later
+@with_heze_and_later
 @spec_test
 @single_phase
 def test_get_sweep_threshold__out_of_range_is_default(spec):
@@ -74,7 +71,7 @@ def test_get_sweep_threshold__out_of_range_is_default(spec):
         assert spec.get_sweep_threshold(validator) == spec.MAX_EFFECTIVE_BALANCE_ELECTRA
 
 
-@with_eip8148_and_later
+@with_heze_and_later
 @spec_test
 @single_phase
 def test_get_sweep_threshold__non_compounding_ignores_bytes(spec):
@@ -84,7 +81,7 @@ def test_get_sweep_threshold__non_compounding_ignores_bytes(spec):
     assert spec.get_sweep_threshold(validator) == spec.MIN_ACTIVATION_BALANCE
 
 
-@with_eip8148_and_later
+@with_heze_and_later
 @spec_test
 @single_phase
 def test_set_sweep_threshold__little_endian(spec):
@@ -99,7 +96,7 @@ def test_set_sweep_threshold__little_endian(spec):
     assert spec.get_sweep_threshold(validator) == _eth(spec, 1000)
 
 
-@with_eip8148_and_later
+@with_heze_and_later
 @spec_test
 @single_phase
 def test_set_sweep_threshold__max_restores_credentials(spec):
@@ -113,7 +110,7 @@ def test_set_sweep_threshold__max_restores_credentials(spec):
     assert validator.withdrawal_credentials == original
 
 
-@with_eip8148_and_later
+@with_heze_and_later
 @spec_test
 @single_phase
 def test_get_validator_from_deposit__caps_effective_balance(spec):
@@ -126,7 +123,7 @@ def test_get_validator_from_deposit__caps_effective_balance(spec):
     assert validator.effective_balance == spec.MIN_ACTIVATION_BALANCE
 
 
-@with_eip8148_and_later
+@with_heze_and_later
 @spec_test
 @single_phase
 def test_get_validator_from_deposit__normalizes_threshold(spec):
@@ -140,7 +137,7 @@ def test_get_validator_from_deposit__normalizes_threshold(spec):
         assert validator.effective_balance == spec.MAX_EFFECTIVE_BALANCE_ELECTRA
 
 
-@with_eip8148_and_later
+@with_heze_and_later
 @spec_state_test
 def test_process_set_sweep_threshold_request__success(spec, state):
     validator = _prepare_compounding(spec, state)
@@ -152,7 +149,7 @@ def test_process_set_sweep_threshold_request__success(spec, state):
     assert bytes(validator.withdrawal_credentials[12:]) == ADDRESS
 
 
-@with_eip8148_and_later
+@with_heze_and_later
 @spec_state_test
 def test_process_set_sweep_threshold_request__max_restores_credentials(spec, state):
     validator = _prepare_compounding(spec, state)
@@ -172,7 +169,7 @@ def _assert_request_ignored(spec, state, request, index=0):
     assert state.validators[index].withdrawal_credentials == credentials
 
 
-@with_eip8148_and_later
+@with_heze_and_later
 @spec_state_test
 def test_process_set_sweep_threshold_request__unknown_pubkey(spec, state):
     _prepare_compounding(spec, state)
@@ -181,14 +178,14 @@ def test_process_set_sweep_threshold_request__unknown_pubkey(spec, state):
     _assert_request_ignored(spec, state, request)
 
 
-@with_eip8148_and_later
+@with_heze_and_later
 @spec_state_test
 def test_process_set_sweep_threshold_request__not_compounding(spec, state):
     set_eth1_withdrawal_credential_with_balance(spec, state, 0, address=ADDRESS)
     _assert_request_ignored(spec, state, _request(spec, state, 0, _eth(spec, 64)))
 
 
-@with_eip8148_and_later
+@with_heze_and_later
 @spec_state_test
 def test_process_set_sweep_threshold_request__wrong_source_address(spec, state):
     _prepare_compounding(spec, state)
@@ -196,7 +193,7 @@ def test_process_set_sweep_threshold_request__wrong_source_address(spec, state):
     _assert_request_ignored(spec, state, request)
 
 
-@with_eip8148_and_later
+@with_heze_and_later
 @spec_state_test
 def test_process_set_sweep_threshold_request__exiting(spec, state):
     validator = _prepare_compounding(spec, state)
@@ -204,14 +201,14 @@ def test_process_set_sweep_threshold_request__exiting(spec, state):
     _assert_request_ignored(spec, state, _request(spec, state, 0, _eth(spec, 64)))
 
 
-@with_eip8148_and_later
+@with_heze_and_later
 @spec_state_test
 def test_process_set_sweep_threshold_request__below_balance(spec, state):
     _prepare_compounding(spec, state, balance_eth=100)
     _assert_request_ignored(spec, state, _request(spec, state, 0, _eth(spec, 64)))
 
 
-@with_eip8148_and_later
+@with_heze_and_later
 @spec_state_test
 def test_process_set_sweep_threshold_request__not_increment_multiple(spec, state):
     _prepare_compounding(spec, state)
@@ -219,21 +216,21 @@ def test_process_set_sweep_threshold_request__not_increment_multiple(spec, state
     _assert_request_ignored(spec, state, _request(spec, state, 0, threshold))
 
 
-@with_eip8148_and_later
+@with_heze_and_later
 @spec_state_test
 def test_process_set_sweep_threshold_request__below_min_activation_balance(spec, state):
     _prepare_compounding(spec, state, balance_eth=16)
     _assert_request_ignored(spec, state, _request(spec, state, 0, _eth(spec, 31)))
 
 
-@with_eip8148_and_later
+@with_heze_and_later
 @spec_state_test
 def test_process_set_sweep_threshold_request__above_max_effective_balance(spec, state):
     _prepare_compounding(spec, state)
     _assert_request_ignored(spec, state, _request(spec, state, 0, _eth(spec, 2049)))
 
 
-@with_eip8148_and_later
+@with_heze_and_later
 @spec_state_test
 def test_process_effective_balance_updates__capped_at_threshold(spec, state):
     validator = _prepare_compounding(spec, state, balance_eth=32)
@@ -245,7 +242,7 @@ def test_process_effective_balance_updates__capped_at_threshold(spec, state):
     assert validator.effective_balance == _eth(spec, 64)
 
 
-@with_eip8148_and_later
+@with_heze_and_later
 @spec_state_test
 def test_get_validators_sweep_withdrawals__sweeps_above_threshold(spec, state):
     validator = _prepare_compounding(spec, state, balance_eth=64)
@@ -260,7 +257,7 @@ def test_get_validators_sweep_withdrawals__sweeps_above_threshold(spec, state):
     assert withdrawals[0].amount == _eth(spec, 1)
 
 
-@with_eip8148_and_later
+@with_heze_and_later
 @spec_state_test
 def test_switch_to_compounding_validator__clears_threshold(spec, state):
     set_eth1_withdrawal_credential_with_balance(spec, state, 0, address=ADDRESS)
@@ -272,22 +269,3 @@ def test_switch_to_compounding_validator__clears_threshold(spec, state):
     assert spec.has_compounding_withdrawal_credential(validator)
     assert _threshold_bytes(validator) == b"\x00\x00"
     assert spec.get_sweep_threshold(validator) == spec.MAX_EFFECTIVE_BALANCE_ELECTRA
-
-
-@with_phases(phases=[HEZE], other_phases=[EIP8148])
-@spec_test
-@with_state
-def test_upgrade_to_eip8148__clears_threshold(spec, phases, state):
-    post_spec = phases[EIP8148]
-    compounding = state.validators[0]
-    compounding.withdrawal_credentials = _credentials(spec, spec.COMPOUNDING_WITHDRAWAL_PREFIX, 128)
-    execution = state.validators[1]
-    execution.withdrawal_credentials = _credentials(spec, spec.ETH1_ADDRESS_WITHDRAWAL_PREFIX, 128)
-
-    post = post_spec.upgrade_to_eip8148(state)
-
-    assert _threshold_bytes(post.validators[0]) == b"\x00\x00"
-    assert post_spec.get_sweep_threshold(post.validators[0]) == (
-        post_spec.MAX_EFFECTIVE_BALANCE_ELECTRA
-    )
-    assert _threshold_bytes(post.validators[1]) == (128).to_bytes(2, "little")

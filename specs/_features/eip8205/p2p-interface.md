@@ -90,6 +90,10 @@ def verify_execution_requests_limits(execution_requests: ExecutionRequests) -> N
     if len(execution_requests.builder_exits) > MAX_BUILDER_EXIT_REQUESTS_PER_PAYLOAD:
         raise GossipReject("too many builder exit requests")
 
+    # [REJECT] The set sweep threshold request count is within the limit
+    if len(execution_requests.sweep_thresholds) > MAX_SET_SWEEP_THRESHOLD_REQUESTS_PER_PAYLOAD:
+        raise GossipReject("too many set sweep threshold requests")
+
     # [New in EIP8205]
     # [REJECT] The validator preregistration request count is within the limit
     if len(execution_requests.preregistrations) > MAX_PREREGISTRATION_REQUESTS_PER_PAYLOAD:

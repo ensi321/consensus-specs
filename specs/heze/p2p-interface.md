@@ -14,6 +14,7 @@
   - [Modified `Seen`](#modified-seen)
   - [Modified `compute_fork_version`](#modified-compute_fork_version)
   - [Modified `verify_block_body_operation_limits`](#modified-verify_block_body_operation_limits)
+  - [Modified `verify_execution_requests_limits`](#modified-verify_execution_requests_limits)
 - [The gossip domain: gossipsub](#the-gossip-domain-gossipsub)
   - [Topics and messages](#topics-and-messages)
     - [Global topics](#global-topics)
@@ -154,6 +155,39 @@ def verify_block_body_operation_limits(body: BeaconBlockBody) -> None:
     # [REJECT] The payload attestation count is within the limit
     if len(body.payload_attestations) > MAX_PAYLOAD_ATTESTATIONS:
         raise GossipReject("too many payload attestations")
+```
+
+### Modified `verify_execution_requests_limits`
+
+*Note*: `verify_execution_requests_limits` adds the check that the set sweep
+threshold request count is within its limit.
+
+```python
+def verify_execution_requests_limits(execution_requests: ExecutionRequests) -> None:
+    """
+    Verify that each execution request count is within its limit.
+    Raises GossipReject on validation failure.
+    """
+    # [REJECT] The withdrawal request count is within the limit
+    if len(execution_requests.withdrawals) > MAX_WITHDRAWAL_REQUESTS_PER_PAYLOAD:
+        raise GossipReject("too many withdrawal requests")
+
+    # [REJECT] The consolidation request count is within the limit
+    if len(execution_requests.consolidations) > MAX_CONSOLIDATION_REQUESTS_PER_PAYLOAD:
+        raise GossipReject("too many consolidation requests")
+
+    # [REJECT] The builder deposit request count is within the limit
+    if len(execution_requests.builder_deposits) > MAX_BUILDER_DEPOSIT_REQUESTS_PER_PAYLOAD:
+        raise GossipReject("too many builder deposit requests")
+
+    # [REJECT] The builder exit request count is within the limit
+    if len(execution_requests.builder_exits) > MAX_BUILDER_EXIT_REQUESTS_PER_PAYLOAD:
+        raise GossipReject("too many builder exit requests")
+
+    # [New in Heze:EIP8148]
+    # [REJECT] The set sweep threshold request count is within the limit
+    if len(execution_requests.sweep_thresholds) > MAX_SET_SWEEP_THRESHOLD_REQUESTS_PER_PAYLOAD:
+        raise GossipReject("too many set sweep threshold requests")
 ```
 
 ## The gossip domain: gossipsub

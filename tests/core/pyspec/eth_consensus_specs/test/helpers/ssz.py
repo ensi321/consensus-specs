@@ -10,9 +10,15 @@ from eth_consensus_specs.test.helpers.consolidations import get_max_consolidatio
 from eth_consensus_specs.test.helpers.deposits import get_max_deposits
 from eth_consensus_specs.test.helpers.execution_requests import (
     get_max_builder_exit_requests,
+    get_max_set_sweep_threshold_requests,
     get_max_withdrawal_requests,
 )
-from eth_consensus_specs.test.helpers.forks import is_post_capella, is_post_electra, is_post_gloas
+from eth_consensus_specs.test.helpers.forks import (
+    is_post_capella,
+    is_post_electra,
+    is_post_gloas,
+    is_post_heze,
+)
 from eth_consensus_specs.test.helpers.payload_attestation import get_max_payload_attestations
 from eth_consensus_specs.test.helpers.proposer_slashings import get_max_proposer_slashings
 from eth_consensus_specs.test.helpers.voluntary_exits import get_max_voluntary_exits
@@ -41,4 +47,6 @@ def get_soft_list_length_limits(spec):
         limits[spec.PayloadAttestations] = get_max_payload_attestations(spec)
         limits[spec.BuilderDepositRequests] = get_max_builder_deposit_requests(spec)
         limits[spec.BuilderExitRequests] = get_max_builder_exit_requests(spec)
+    if is_post_heze(spec):
+        limits[spec.SweepThresholdRequests] = get_max_set_sweep_threshold_requests(spec)
     return limits

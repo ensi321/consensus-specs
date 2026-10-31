@@ -38,9 +38,6 @@ categories:
   - title: EIP-8025
     when:
       label: eip8025
-  - title: EIP-8148
-    when:
-      label: eip8148
   - title: EIP-8198
     when:
       label: eip8198

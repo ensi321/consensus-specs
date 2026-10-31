@@ -1,11 +1,11 @@
 from eth_consensus_specs.test.context import (
     single_phase,
     spec_test,
-    with_eip8148_and_later,
+    with_heze_and_later,
 )
 
 
-@with_eip8148_and_later
+@with_heze_and_later
 @spec_test
 @single_phase
 def test_requests_serialization_round_trip__sweep_thresholds(spec):

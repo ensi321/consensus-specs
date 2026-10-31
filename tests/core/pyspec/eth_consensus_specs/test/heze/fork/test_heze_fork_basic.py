@@ -36,6 +36,45 @@ def test_fork_base_state(spec, phases, state):
 @spec_test
 @with_state
 @with_meta_tags(HEZE_FORK_TEST_META_TAGS)
+def test_fork_clears_sweep_threshold_bytes(spec, phases, state):
+    """
+    The upgrade clears the sweep threshold bytes of compounding credentials and
+    leaves the bytes of other credentials alone.
+    """
+    post_spec = phases[HEZE]
+    offset = post_spec.SWEEP_THRESHOLD_CREDENTIAL_OFFSET
+    length = post_spec.SWEEP_THRESHOLD_CREDENTIAL_LENGTH
+    encoded = (128).to_bytes(length, "little")
+    address = b"\x11" * 20
+    compounding_index, execution_index = 0, 1
+    state.validators[compounding_index].withdrawal_credentials = (
+        spec.COMPOUNDING_WITHDRAWAL_PREFIX + encoded + b"\x00" * 9 + address
+    )
+    state.validators[execution_index].withdrawal_credentials = (
+        spec.ETH1_ADDRESS_WITHDRAWAL_PREFIX + encoded + b"\x00" * 9 + address
+    )
+
+    yield "pre", state
+
+    post_state = post_spec.upgrade_to_heze(state.copy())
+
+    yield "post", post_state
+
+    compounding = post_state.validators[compounding_index]
+    assert bytes(compounding.withdrawal_credentials[offset : offset + length]) == b"\x00" * length
+    assert bytes(compounding.withdrawal_credentials[12:]) == address
+    assert post_spec.get_sweep_threshold(compounding) == post_spec.MAX_EFFECTIVE_BALANCE_ELECTRA
+    execution = post_state.validators[execution_index]
+    assert bytes(execution.withdrawal_credentials[offset : offset + length]) == encoded
+    for index, validator in enumerate(post_state.validators):
+        if index not in (compounding_index, execution_index):
+            assert validator == state.validators[index]
+
+
+@with_phases(phases=[GLOAS], other_phases=[HEZE])
+@spec_test
+@with_state
+@with_meta_tags(HEZE_FORK_TEST_META_TAGS)
 def test_fork_next_epoch(spec, phases, state):
     next_epoch(spec, state)
     yield from run_fork_test(phases[HEZE], state)

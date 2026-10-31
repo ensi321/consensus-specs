@@ -37,6 +37,7 @@ def get_execution_requests(execution_requests_list: Sequence[bytes]) -> Executio
     consolidations = ConsolidationRequests()
     builder_deposits = BuilderDepositRequests()
     builder_exits = BuilderExitRequests()
+    sweep_thresholds = SweepThresholdRequests()
     # [New in EIP8205]
     preregistrations = PreregistrationRequests()
 
@@ -46,6 +47,7 @@ def get_execution_requests(execution_requests_list: Sequence[bytes]) -> Executio
         CONSOLIDATION_REQUEST_TYPE,
         BUILDER_DEPOSIT_REQUEST_TYPE,
         BUILDER_EXIT_REQUEST_TYPE,
+        SWEEP_THRESHOLD_REQUEST_TYPE,
         # [New in EIP8205]
         PREREGISTRATION_REQUEST_TYPE,
     ]
@@ -73,6 +75,8 @@ def get_execution_requests(execution_requests_list: Sequence[bytes]) -> Executio
             builder_deposits = ssz_deserialize(BuilderDepositRequests, request_data)
         elif request_type == BUILDER_EXIT_REQUEST_TYPE:
             builder_exits = ssz_deserialize(BuilderExitRequests, request_data)
+        elif request_type == SWEEP_THRESHOLD_REQUEST_TYPE:
+            sweep_thresholds = ssz_deserialize(SweepThresholdRequests, request_data)
         # [New in EIP8205]
         elif request_type == PREREGISTRATION_REQUEST_TYPE:
             preregistrations = ssz_deserialize(PreregistrationRequests, request_data)
@@ -83,6 +87,7 @@ def get_execution_requests(execution_requests_list: Sequence[bytes]) -> Executio
         consolidations=consolidations,
         builder_deposits=builder_deposits,
         builder_exits=builder_exits,
+        sweep_thresholds=sweep_thresholds,
         # [New in EIP8205]
         preregistrations=preregistrations,
     )

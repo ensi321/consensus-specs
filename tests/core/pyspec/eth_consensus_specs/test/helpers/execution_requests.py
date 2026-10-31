@@ -9,6 +9,10 @@ def get_max_builder_exit_requests(spec):
     return spec.MAX_BUILDER_EXIT_REQUESTS_PER_PAYLOAD
 
 
+def get_max_set_sweep_threshold_requests(spec):
+    return spec.MAX_SET_SWEEP_THRESHOLD_REQUESTS_PER_PAYLOAD
+
+
 def get_non_empty_execution_requests(spec):
     deposit_request = prepare_deposit_request(
         spec,
