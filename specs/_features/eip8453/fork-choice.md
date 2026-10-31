@@ -1347,7 +1347,7 @@ def record_head_vote_message(store: Store, state: BeaconState, message: HeadVote
   it.
 
 ```python
-def update_confirmation(store: Store, slot: Slot) -> None:
+def update_confirmation(store: Store, slot: Slot, time_ms: Uint64) -> None:
     fg_frame = get_fg_frame(store)
     support_cutoff_ms = (
         compute_time_at_slot_ms(store.genesis_time_ms, slot) + get_support_cutoff_ms()
@@ -1364,7 +1364,7 @@ def update_confirmation(store: Store, slot: Slot) -> None:
     # Return if the confirmation is not compatible with one of the live locks
     if any(
         not is_compatible(store, lock, confirmed)
-        for _, lock in get_live_locks(store, fg_frame, store.time_ms)
+        for _, lock in get_live_locks(store, fg_frame, time_ms)
     ):
         # Save the candidate even when a live lock vetoes it,
         # clear the fast-confirmed path, and return
@@ -1474,20 +1474,28 @@ def is_valid_head_vote_message(state: BeaconState, message: HeadVoteMessage) -> 
 
 ### Modified `on_tick`
 
-*Note*: Runs an unlocking or confirmation duty if scheduled at `time_ms`, then
-updates the store time. Callers must process this tick before other events at
-the same timestamp.
+*Note*: Runs every unlocking and confirmation duty scheduled after the previous
+tick and no later than `time_ms`, in slot order, then updates the store time. A
+duty that fell into a gap between ticks runs on the next tick with the time it
+was scheduled for. Callers must process this tick before other events at the
+same timestamp.
 
 ```python
 def on_tick(store: Store, time_ms: Uint64) -> None:
-    time_into_slot_ms = (time_ms - store.genesis_time_ms) % SLOT_DURATION_MS
-    slot = compute_slot_at_time_ms(store.genesis_time_ms, time_ms)
+    previous_time_ms = store.time_ms
+    first_slot = compute_slot_at_time_ms(store.genesis_time_ms, previous_time_ms)
+    last_slot = compute_slot_at_time_ms(store.genesis_time_ms, time_ms)
 
-    if slot > GENESIS_SLOT and time_into_slot_ms == get_head_vote_due_ms():
-        unlock(store, slot - 1, time_ms)
+    for slot in range(max(first_slot, GENESIS_SLOT + 1), last_slot + 1):
+        slot_start_ms = compute_time_at_slot_ms(store.genesis_time_ms, Slot(slot))
 
-    if slot > GENESIS_SLOT and time_into_slot_ms == get_support_cutoff_ms():
-        update_confirmation(store, slot - 1)
+        unlock_due_ms = slot_start_ms + get_head_vote_due_ms()
+        if previous_time_ms < unlock_due_ms <= time_ms:
+            unlock(store, Slot(slot) - 1, unlock_due_ms)
+
+        confirmation_due_ms = slot_start_ms + get_support_cutoff_ms()
+        if previous_time_ms < confirmation_due_ms <= time_ms:
+            update_confirmation(store, Slot(slot) - 1, confirmation_due_ms)
 
     # Update store time
     store.time_ms = time_ms
