@@ -782,17 +782,24 @@ def get_equivocating_indices(votes: set[ACVote]) -> set[ValidatorIndex]:
 
 #### New `get_live_locks`
 
+*Note*: A lock is live while it has not expired and its node descends from
+`fg_frame.forkchoice_root`. A lock that conflicts with the forkchoice root has
+been overridden by the finality gadget: it neither anchors the head walk nor
+vetoes a confirmation.
+
 ```python
 def get_live_locks(
     store: Store, fg_frame: FGFrame, time_ms: Uint64
 ) -> list[tuple[Uint64, ForkChoiceNode]]:
     """
-    Return (deadline, node) tuples for unexpired locks in ``fg_frame.tree``.
+    Return (deadline, node) tuples for unexpired locks descending from ``fg_frame.forkchoice_root``.
     """
     return [
         (deadline, lock)
         for deadline, lock in store.locks.items()
-        if deadline > time_ms and lock in fg_frame.tree
+        if deadline > time_ms
+        and lock in fg_frame.tree
+        and is_ancestor(store, lock, fg_frame.forkchoice_root)
     ]
 ```
 
