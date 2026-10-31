@@ -1295,8 +1295,12 @@ def record_payload_receipt_time(store: Store, root: Root) -> None:
 #### New `record_head_vote_committee`
 
 *Note*: Store the head vote committee for a vote from the previous or current
-slot. Other slot committees aren't used in any of AC walks. Assumes all branches
-agree on the committee for a given slot.
+slot. Other slot committees aren't used in any of AC walks. The committee of a
+slot is fixed by the chain state `MIN_SEED_LOOKAHEAD + 1` epochs before the
+slot's epoch, so branches that forked earlier than that may compute different
+committees. The store keeps the committee from the first branch that recorded it
+and does not reject a branch that disagrees: a committee mismatch must never
+make a valid block or vote unprocessable.
 
 ```python
 def record_head_vote_committee(store: Store, state: BeaconState, data: HeadVoteData) -> None:
@@ -1304,11 +1308,7 @@ def record_head_vote_committee(store: Store, state: BeaconState, data: HeadVoteD
     Store head vote committee.
     """
     if data.slot + 1 >= get_current_slot(store):
-        if data.slot in store.head_vote_committees:
-            assert store.head_vote_committees[data.slot] == get_head_vote_committee(
-                state, data.slot
-            )
-        else:
+        if data.slot not in store.head_vote_committees:
             store.head_vote_committees[data.slot] = get_head_vote_committee(state, data.slot)
 ```
 
