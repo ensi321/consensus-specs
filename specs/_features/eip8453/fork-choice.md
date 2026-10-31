@@ -1782,23 +1782,30 @@ def get_confirmed_execution_block_hash(store: Store) -> Hash32:
 
 *Note*: Returns the latest confirmed node, falling back to the finalized node if
 it is outside the subtree rooted at finalized block or conflicts with the
-current head.
+current head. The fallback is the finalized node as the head's chain sees it,
+with its payload status resolved, rather than the pending finalized node: a
+pending node resolves to the payload of its parent, which would place the
+confirmed execution block behind the finalized one.
 
 ```python
 def get_confirmed_node(store: Store) -> ForkChoiceNode:
     fg_frame = get_fg_frame(store)
+    head = get_head(store)
+
+    # The finalized node on the head's chain, with its payload status resolved
+    finalized_slot = store.blocks[fg_frame.finalized_node.root].slot
+    finalized_node = get_ancestor(store, head, finalized_slot)
 
     # Fallback to finality if the latest confirmed is out of the FG frame
     if (
         store.latest_confirmed not in fg_frame.tree
         or store.latest_confirmed == fg_frame.finalized_node
     ):
-        return fg_frame.finalized_node
+        return finalized_node
 
     # Fall back to finality if the latest confirmed node conflicts with the current head
-    head = get_head(store)
     if not is_compatible(store, head, store.latest_confirmed):
-        return fg_frame.finalized_node
+        return finalized_node
 
     return store.latest_confirmed
 ```
